@@ -1,0 +1,822 @@
+---
+title: "Dataset_preprocessing"
+author: "Dillon Corvino"
+date: "05/12/2024"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: united
+    highlight: tango
+    df_print: paged
+    code_folding: hide
+editor_options: 
+  chunk_output_type: console
+---
+
+Built with R version `r getRversion()`
+
+## Setup {.tabset}
+
+### Dataset information
+```{r Dataset_Info}
+
+# Human 
+# data downloaded from https://zenodo.org/records/7562864
+
+```
+
+### Environment
+```{r setup}
+
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,  
+  eval = TRUE, 
+  tidy = TRUE
+)
+
+knitr::opts_knit$set(
+  root.dir = "../"
+)
+
+# Environment Set up
+rm(list = ls()) #Clean workspace
+cat("\014")     #Clean Console
+gc() # Free memory
+
+# pipeline variables
+long.compute <- FALSE
+do.plot <- TRUE
+quick.load <- TRUE
+
+# Establish working directory
+library("rstudioapi")
+
+# Set working directory to source file location
+setwd(dirname(getActiveDocumentContext()$path))
+setwd("..")
+
+# Create output directories & load custom functions & colour scheme
+source("scripts/Setup.R", local = knitr::knit_global())
+
+# load packages
+library("Seurat")
+library("SeuratExtend")
+
+# Load the future package
+library(future)
+
+# Set the maximum size of globals that can be exported to 50 GB
+options(future.globals.maxSize = 100 * 1024^3)  # 50 GB in bytes
+getOption("future.globals.maxSize")
+
+
+# Ensure ggplot2 is the correct version - requires restarting Rsession and loading packages again
+ggplot2_switch_version(desired_version = "3.5.0")
+
+
+# genes of interest 
+adenosine.genes <- c("NT5E", "ENTPD1", "ADORA1", "ADORA2A", "ADORA2B", "ADORA3")
+
+# load processed data
+if(quick.load){
+  
+    haniffa.seurat <- LoadSeuratRds("saves/haniffa_seurat.rds")
+
+}
+
+```
+
+
+## Pre-processing {.tabset}
+
+### Load dataset
+```{r load_dataset}
+
+if(long.compute){
+
+    # Create output dir
+    output.dir <- paste0("results/Overview/")
+    
+    if(!dir.exists(output.dir)){
+      dir.create(output.dir, 
+                 recursive = T)
+    }
+      
+      
+      
+  input.path <- "data/Zenodo_7562864_dataset/SC-RNA-DATA"
+  
+  list.dirs(input.path)
+  
+  # Haniffa data 
+  haniffa.path <- "/HANIFFA-DATA/RDS-Files/"
+  haniffa.healthy <- readRDS(paste0(input.path, haniffa.path, "healthy_skin.sc_data_HNF.RDS"))
+  haniffa.psoriasis <- readRDS(paste0(input.path, haniffa.path, "HNF_SC_RNA_PSORIASIS_DATA.RDS"))
+  #haniffa.data <- LoadH5Seurat(paste0(input.path, haniffa.path, "submission.h5seurat"))
+  
+head(haniffa.healthy@meta.data)
+head(haniffa.psoriasis@meta.data)
+
+# are healthy samples also present in psoriasis dataset or unique 
+healthy.result <- gsub(".*-", "", rownames(haniffa.healthy@meta.data))
+healthy.result <- unique(healthy.result)
+
+psoriasis.result <- gsub(".*-", "", rownames(haniffa.psoriasis@meta.data))
+psoriasis.result <- unique(psoriasis.result)
+healthy.result %in% psoriasis.result
+psoriasis.result %in% healthy.result
+
+
+
+
+meta.vars <- c("Status", "Site", "Tissue", "Enrichment", "Location", "donor_id", "Sex", "Age", "stage", "final_clustering")
+
+for(i in seq_along(meta.vars)){
+
+p1 <- DimPlot_scCustom(haniffa.healthy,
+                       group.by = meta.vars[i],
+                       label = T,
+                       raster = T,
+                       pt.size = 1) + NoLegend() + ggtitle("Healthy_dataset ", meta.vars[i])
+
+p2 <- DimPlot_scCustom(haniffa.psoriasis,
+                       group.by = meta.vars[i],
+                       label = T,
+                       raster = T,
+                       pt.size = 1) + NoLegend() + ggtitle("Psoriasis_dataset ", meta.vars[i])
+
+print(p1|p2)
+ggsave(paste0(output.dir, "Haniffa_dataset_", meta.vars[i], ".pdf"))
+
+}
+
+
+# Sullivan data 
+ # sullivan.path <- "/SULLIVAN-DATA/RDS-Files/"
+ # sullivan.data <- readRDS(paste0(input.path, sullivan.path, "LEAN_SAMPLES_SCRNA.rds"))
+
+#head(sullivan.data@meta.data)
+#DimPlot2(sullivan.data, group.by = "CellType")
+
+
+
+# Travis data 
+travis.path <- "/TRAVIS-DATA/RDS-Files/"
+#travis.data <- readRDS(paste0(input.path, travis.path, "Travis_Data_Seurat_object.RDS"))
+travis.NM.skin <- readRDS(paste0(input.path, travis.path, "travis_NM_skin_scRNA.RDS"))
+travis.psoriasis <- readRDS(paste0(input.path, travis.path, "TRAVIS_PSORIASIS_ONLY_DATA.RDS"))
+
+
+#head(travis.data@meta.data)
+head(travis.NM.skin@meta.data)
+head(travis.psoriasis@meta.data)
+
+
+meta.vars <- c("CellType", "Array", "Condition", "Sample", "SampleCondition", "Specific_CellType", "SingleR_Labels")
+
+for(i in seq_along(meta.vars)){
+
+p1 <- DimPlot_scCustom(travis.NM.skin,
+                       group.by = meta.vars[i],
+                       label = T,
+                       raster = T,
+                       pt.size = 1) + NoLegend() + ggtitle("Healthy_dataset ", meta.vars[i])
+
+p2 <- DimPlot_scCustom(travis.psoriasis,
+                       group.by = meta.vars[i],
+                       label = T,
+                       raster = T,
+                       pt.size = 1) + NoLegend() + ggtitle("Psoriasis_dataset ", meta.vars[i])
+
+print(p1|p2)
+
+ggsave(paste0(output.dir, "Travis_dataset_", meta.vars[i], ".pdf"))
+
+}
+
+    
+    # merge haniffa datasets
+    haniffa.seurat <- scCustomize::Merge_Seurat_List(list_seurat = list("Healthy" = haniffa.healthy, 
+                                                                      "Psoriasis" = haniffa.psoriasis), 
+                                                  add.cell.ids = c("Healthy", "Psoriasis"))
+    
+    haniffa.seurat # 33,538 genes across 343,706 cells
+    table(haniffa.seurat@meta.data$Status) # 195,739 healthy and 147,967 Psoriasis (some lesion some nonlesion)
+    
+    
+    
+    
+# remove un-needed data objects
+    rm(list=c("haniffa.healthy", "haniffa.psoriasis", "travis.NM.skin", "travis.psoriasis"))
+    
+    
+    }
+
+```
+
+
+
+## QC and Filter {.tabset}
+
+### QC & filter
+```{r QC_and_filter}
+
+if(long.compute){
+  
+  
+    # Create output dir
+    output.dir <- paste0("results/QC/")
+    
+    if(!dir.exists(output.dir)){
+      dir.create(output.dir, 
+                 recursive = T)
+      
+    }
+    
+    
+    # set idents to sampleID
+    Idents(haniffa.seurat) <- haniffa.seurat$Status
+    
+    # set default assay 
+    DefaultAssay(haniffa.seurat) <- "RNA"
+    
+    # Add mitochondrial and ribosomal gene percentages
+    
+    haniffa.seurat <- Add_Mito_Ribo(object = haniffa.seurat, species = "Human", overwrite = TRUE) 
+    
+    # Add cell complexity/novelty QC metric
+   haniffa.seurat <- Add_Cell_Complexity(object = haniffa.seurat, overwrite = TRUE)
+    
+    # Setting cutoff values 
+    feature.low <- 200
+    feature.high <- 5000
+    umi.low <- 1000
+    umi.high <- 45000
+    mito.high <- 10
+    ribo.high <- 2
+    complexity.high <- 0.75
+    
+    
+    ########################
+    # QC plots
+    ########################
+    if(do.plot){
+      # nFeatures
+      print(
+        QC_Plots_Genes(seurat_object = haniffa.seurat, 
+                       low_cutoff = feature.low, 
+                       high_cutoff = feature.high,
+                       pt.size = 0) 
+      )
+      
+      dev.copy(pdf, paste0(output.dir, "genes.pdf"))
+      dev.off()
+      
+      
+      # UMI
+      print(
+        QC_Plots_UMIs(seurat_object = haniffa.seurat, 
+                      low_cutoff = umi.low, 
+                      high_cutoff = umi.high, 
+                      y_axis_log = T,
+                      pt.size = 0)
+      )
+      
+      dev.copy(pdf, paste0(output.dir, "UMI.pdf"))
+      dev.off()
+      
+      
+      # Mito percentage
+      print(
+        QC_Plots_Mito(seurat_object = haniffa.seurat, 
+                      high_cutoff = mito.high,
+                      pt.size = 0)
+      )
+      
+      dev.copy(pdf, paste0(output.dir, "mito.pdf"))
+      dev.off()
+      
+      
+      # Ribo percentage
+      print(
+        QC_Plots_Feature(seurat_object = haniffa.seurat,
+                         feature = "percent_ribo",
+                         high_cutoff = ribo.high,
+                         pt.size = 0)
+      )
+      
+      dev.copy(pdf, paste0(output.dir, "Ribo.pdf"))
+      dev.off()
+      
+      
+      # Complexity
+      print(
+        QC_Plots_Complexity(seurat_object = haniffa.seurat, 
+                            high_cutoff = complexity.high,
+                            pt.size = 0)
+      ) 
+      
+      dev.copy(pdf, paste0(output.dir, "complexity.pdf"))
+      dev.off()
+      
+    }
+    
+    # Filter dataset
+    haniffa.seurat <- subset(haniffa.seurat, 
+                                  subset = nFeature_RNA > feature.low & 
+                                    nFeature_RNA < feature.high & 
+                                    percent_mito < mito.high & 
+                                    percent_ribo > ribo.high & 
+                                    log10GenesPerUMI > complexity.high)
+    
+    if(do.plot){
+      # nFeatures filtered matrix
+      print(
+        QC_Plots_Genes(seurat_object = haniffa.seurat, 
+                       low_cutoff = feature.low, 
+                       high_cutoff = feature.high,
+                       pt.size = 0) #how many genes per cell? See where to set the cutoffs later
+      )
+      
+      dev.copy(pdf, paste0(output.dir, "genes_filtered.pdf"))
+      dev.off()
+      
+      
+      # UMI filtered matrix
+      print(
+        QC_Plots_UMIs(seurat_object = haniffa.seurat, 
+                      low_cutoff = umi.low, 
+                      high_cutoff = umi.high, 
+                      y_axis_log = T,
+                      pt.size = 0)
+      )
+      
+      dev.copy(pdf, paste0(output.dir, "UMI_filtered.pdf"))
+      dev.off()
+      
+      # Ribo filtered percentage
+      print(
+        QC_Plots_Feature(seurat_object = haniffa.seurat,
+                         feature = "percent_ribo",
+                         high_cutoff = ribo.high,
+                         pt.size = 0)
+      )
+      
+      dev.copy(pdf, paste0(output.dir, "Ribo_filtered.pdf"))
+      dev.off()
+      
+      
+      
+  
+}
+
+    
+}
+```
+
+## Normalise and integrate {.tabset}
+
+### Normalise & integrate GEX data
+```{r Normalise_and_integrate_GEX_data}
+
+if(long.compute){
+  
+  # set default assay 
+  DefaultAssay(haniffa.seurat) <- "RNA"
+  
+  #####################################################
+  # Normalise with scTransform and integrate data
+  #####################################################
+  # note error with more recent version of matrixStats resulting in "useNames = NA is defunct" error. downgrade to matrixStats version 1.1.0 as a workaround
+  # https://github.com/satijalab/seurat/issues/7501#issuecomment-1854571904
+  #remotes::install_version("matrixStats", version="1.1.0") # restart your session and run previous scripts  
+  
+  
+  # note RNA assay is split into run level layers, below script will apply normalisation etc layer-wise
+  haniffa.seurat[["RNA"]] <- split(haniffa.seurat[["RNA"]], f = haniffa.seurat$Status)
+
+  # split by healthy and psoriasis datasets, integrate the two datasets together
+  
+  # Normalise and scale with SCTransform v2
+  haniffa.seurat <- SCTransform(haniffa.seurat, 
+                           method = "glmGamPoi", 
+                           vars.to.regress = "percent_mito", 
+                           vst.flavor = "v2",
+                           verbose = TRUE) %>%
+    RunPCA(reduction.name = "pca_sct") %>%
+    RunUMAP(reduction = "pca_sct",
+            dims = 1:30, 
+            reduction.name = "umap.unintegrated.sct")
+  
+   
+  DefaultAssay(haniffa.seurat) <- "SCT"
+  
+  # integrate layers using cca integration
+  haniffa.seurat <- IntegrateLayers(object = haniffa.seurat,
+                               orig.reduction = "pca_sct",
+                               new.reduction = "integrated.cca.sct",
+                               method = CCAIntegration,
+                               normalization.method = "SCT",
+                               verbose = TRUE)
+  
+  # find clusters and dim reduction using integrated data
+  haniffa.seurat <- FindNeighbors(haniffa.seurat,
+                             dims = 1:30,
+                             reduction = "integrated.cca.sct") %>%
+    FindClusters(resolution = 1.5, 
+                 cluster.name = "clusters_cca_sct") %>%
+    RunUMAP(reduction = "integrated.cca.sct",
+            dims = 1:30, 
+            reduction.name = "umap.cca.sct")
+  
+
+  if(do.plot){
+    
+    # create output dir
+    output.dir <- paste0("results/integration/")
+    
+    if(!dir.exists(output.dir)){
+      dir.create(output.dir, 
+                 recursive = T)
+      
+    }
+    
+    
+    unintegrated.reduction <- "umap.unintegrated.sct"
+    integrated.reduction <- "umap.cca.sct"
+    title.var <- "SCT"
+    
+    
+    # evaluate integration and dim reduction
+    
+    vars.plot <- c("seurat_clusters", "final_clustering", "Sex", "Tissue", "Status", "Enrichment", "donor_id", "Site")
+    
+    for(i in seq_along(vars.plot)){
+      
+      
+      # remove "." from name
+      name.var <- gsub("\\.", "_", vars.plot[i])
+      
+      before.int <- DimPlot(haniffa.seurat,
+                            reduction = unintegrated.reduction, 
+                            label = T,
+                            group.by = vars.plot[i]) + NoLegend() + ggtitle(paste0("Unintegrated ", title.var, " Normalisation"))
+      
+      after.int <- DimPlot(haniffa.seurat,
+                           reduction = integrated.reduction, 
+                           label = T,
+                           group.by = vars.plot[i]) + NoLegend() + ggtitle(paste0("CCA Integration using ", title.var, " Normalisation"))
+      
+      print(before.int | after.int)
+      dev.copy(pdf, paste0(output.dir, "UMAP_before_after_integration", name.var, ".pdf"))
+      dev.off()
+      
+      
+      
+    }
+    
+  }
+  
+}
+
+
+```
+
+### Save seurat object
+```{r save_seurat_object}
+
+if(long.compute){
+  
+  SaveSeuratRds(haniffa.seurat, file = "saves/haniffa_seurat.rds")
+  
+  # extract and save metadata 
+  write.csv(haniffa.seurat@meta.data, "saves/metadata.csv")
+}
+
+```
+
+### Overview
+```{r Overview}
+
+# create output dir
+output.dir <- paste0("results/Dataset_overview/")
+
+if(!dir.exists(output.dir)){
+  dir.create(output.dir, 
+             recursive = T)
+  
+}
+
+    vars.plot <- c("seurat_clusters", "final_clustering", "Sex", "Tissue", "Status", "Enrichment", "donor_id", "Site")
+
+    
+    for(i in seq_along(vars.plot)){
+      
+      p1 <- scCustomize::DimPlot_scCustom(haniffa.seurat,
+                                          group.by = vars.plot[i], 
+                                          label = TRUE,
+                                          pt.size = 1,
+                                          reduction = "umap.cca.sct") + 
+        NoLegend() + 
+        ggtitle(paste0(vars.plot[i]))
+      
+      print(p1)
+      ggsave(filename = paste0(output.dir, "UMAP_", vars.plot[i], ".pdf"))
+      
+    }
+    
+    
+    # Cluster distribution bar plot
+    
+    vars.plot <- c("seurat_clusters", "final_clustering", "Sex", "Tissue", "donor_id", "Site")
+    
+    for(i in seq_along(vars.plot)){
+      
+      p1 <- ClusterDistrBar(haniffa.seurat$Status, haniffa.seurat@meta.data[,vars.plot[i]], 
+                            rev = T, 
+                            percent = T, 
+                            normalize = T, 
+                            plot = T)
+      
+      print(p1)
+      ggsave(filename = paste0(output.dir, "Clust_Distribution_", vars.plot[i], "_normalised.pdf"))
+      
+      
+      p2 <- ClusterDistrBar(haniffa.seurat$Status, haniffa.seurat@meta.data[,vars.plot[i]], 
+                            rev = T, 
+                            percent = F, 
+                            normalize = T, 
+                            plot = T)
+      
+      print(p2)
+      ggsave(filename = paste0(output.dir, "Clust_Distribution_", vars.plot[i], "_normalised_abs.pdf"))
+      
+      
+      
+    }
+    
+    
+    
+```
+
+
+
+### Genes of interest overview
+```{r genes_of_interest}
+
+# create output dir
+output.dir <- paste0("results/genes_of_interest_overview/")
+
+if(!dir.exists(output.dir)){
+  dir.create(output.dir, 
+             recursive = T)
+  
+}
+
+
+
+VlnPlot_scCustom(haniffa.seurat, "ADORA3", pt.size = 0, group.by = "Status")
+
+
+  ############
+  # GEX data
+  ############
+  DefaultAssay(haniffa.seurat) <- "SCT"
+  
+  # create pseudobulk for visualisation
+  pseudo.seurat <- AggregateExpression(haniffa.seurat, 
+                                   assays = "SCT",
+                                   return.seurat = TRUE,
+                                   group.by = c("seurat_clusters", "donor_id"))
+  
+  # set idents of pseudobulk object
+  Idents(pseudo.seurat) <- "orig_idents"
+  
+
+
+
+
+DoHeatmap(pseudo.seurat, 
+            features = goi, 
+            draw.lines = FALSE, 
+            raster = FALSE) + NoLegend()
+  
+#dev.copy(pdf, paste0(output.dir, "Heatmaptop_10_DEGs_seurat_clusters_pseudobulk.pdf"))
+ # dev.off()
+
+
+
+
+
+
+ggplot2_switch_version(desired_version = "3.4.4")
+
+
+# set up object
+DefaultAssay(HL.seurat) <- "ADT"
+
+goi <- rownames(HL.seurat@assays$ADT)
+
+
+# Plot Feature and Density plots iteratively over goi 
+for(i in seq_along(goi)){
+  
+  # feature plots
+  print(
+    scCustomize::FeaturePlot_scCustom(HL.seurat, 
+                                      reduction = "wnn.umap", 
+                                      features = goi[i])
+    
+  )
+  
+  dev.copy(pdf, paste0(output.dir, "UMAP_featureplot_", goi[i], ".pdf"))
+  dev.off()
+  
+  
+  # density plots
+  
+  print(
+    scCustomize::Plot_Density_Custom(HL.seurat, 
+                                     reduction = "wnn.umap",
+                                     features = goi[i], 
+                                     custom_palette = batlow.pal)
+  )
+  dev.copy(pdf, paste0(output.dir, "UMAP_DensityPlot_", goi[i], ".pdf"))
+  dev.off()
+  
+  
+  
+}
+
+
+ggplot2_switch_version(desired_version = "3.5.0")
+
+
+```
+
+
+
+
+
+## Annotate clusters {.tabset}
+
+### Differential gene expression GEX vs seurat_clusters
+```{r DEG_analysis_seurat_clusters}
+
+# create output dir
+output.dir <- paste0("results/DEG_analysis_seurat_clusters/")
+
+if(!dir.exists(output.dir)){
+  dir.create(output.dir, 
+             recursive = T)
+  
+}
+
+################################################
+# Caclulate GEX DEGs for across seurat_clusters 
+################################################
+
+if(long.compute){
+  
+  # set assay
+  DefaultAssay(seurat.human) <- "SCT"
+  seurat.human <- PrepSCTFindMarkers(seurat.human)
+  
+  # DEG calculation using single-cells
+  
+  # set assay
+  DefaultAssay(seurat.human) <- "SCT"
+  
+  # format cluster annotations
+  seurat.human@meta.data$seurat_clusters <- factor(seurat.human@meta.data$seurat_clusters, levels = c(0:length(unique(seurat.human@meta.data$seurat_clusters))))
+  
+  # set idents
+  Idents(seurat.human) <- "seurat_clusters"
+  
+  seurat_clusters.gex.de <- FindAllMarkers(seurat.human,
+                                           assay = "SCT",
+                                           only.pos = TRUE, 
+                                           verbose = TRUE)
+  
+  # save to file 
+  write.csv(seurat_clusters.gex.de, paste0(output.dir, "DEGs_wilcox_single_cell_SCT_seurat_clusters.csv"))
+  
+}else{
+  
+  seurat_clusters.gex.de <- read.csv(paste0(output.dir, "DEGs_wilcox_single_cell_SCT_seurat_clusters.csv"))
+  
+}
+
+
+
+
+```
+
+
+### DEG heatmaps - GEX and ADT - seurat_clusters
+```{r DEG_heatmaps_seurat_clusters}
+
+# create output dir
+output.dir <- paste0("results/DEG_analysis_seurat_clusters/")
+
+if(!dir.exists(output.dir)){
+  dir.create(output.dir, 
+             recursive = T)
+  
+}
+
+
+if(do.plot){
+  
+  
+  ############
+  # GEX data
+  ############
+  DefaultAssay(seurat.human) <- "SCT"
+  
+  # create pseudobulk for visualisation
+  pseudo.seurat <- AggregateExpression(seurat.human, 
+                                   assays = "SCT",
+                                   return.seurat = TRUE,
+                                   group.by = c("seurat_clusters"))
+  
+  # set idents of pseudobulk object
+  Idents(pseudo.seurat) <- "seurat_clusters"
+  
+  # extract top 10 DEGs per cluster
+  goi <- seurat_clusters.gex.de %>%
+    dplyr::filter(p_val_adj < 0.05) %>%
+    dplyr::group_by(cluster) %>%
+    dplyr::top_n(10, avg_log2FC) %>%
+    dplyr::pull(gene)
+  
+  # heatmap of top 10 degs per cluster
+  DoHeatmap(pseudo.seurat, 
+            features = goi, 
+            draw.lines = FALSE, 
+            raster = FALSE) + NoLegend()
+  
+  dev.copy(pdf, paste0(output.dir, "Heatmaptop_10_DEGs_seurat_clusters_pseudobulk.pdf"))
+  dev.off()
+  
+  
+  # iterate over the top degs for each cluster 
+  cluster.id <- unique(seurat_clusters.gex.de$cluster)
+  for(i in seq_along(cluster.id)){
+    
+    
+    print(cluster.id[i])
+    
+    goi <- seurat_clusters.gex.de %>%
+      dplyr::filter(p_val_adj < 0.05) %>%
+      dplyr::filter(cluster == cluster.id[i]) %>%
+      dplyr::top_n(50, avg_log2FC)
+    
+    goi <- unique(goi)
+    
+    print(
+      DoHeatmap(pseudo.seurat, 
+                features = goi$gene, 
+                draw.lines = FALSE, 
+                raster = FALSE)
+    )
+    
+    dev.copy(pdf, paste0(output.dir, "Heatmaptop_50_DEGs_pseudobulk__seurat_cluster_", cluster.id[i], ".pdf"))
+    dev.off()
+    
+  }
+  
+}
+
+```
+
+
+
+
+
+
+
+
+### Save seurat object
+```{r save_seurat_object}
+
+if(long.compute){
+  
+  SaveSeuratRds(HL.seurat, file = "saves/HL_seurat_Azimuth.rds")
+  
+  # extract and save metadata 
+  write.csv(HL.seurat@meta.data, "saves/metadata.csv")
+}else{
+  
+  HL.seurat <- LoadSeuratRds("saves/HL_seurat_Azimuth.rds")
+}
+
+```
+
+
+
+

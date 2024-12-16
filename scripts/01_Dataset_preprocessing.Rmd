@@ -565,11 +565,11 @@ if(!dir.exists(output.dir)){
 
 
 
-### Genes of interest overview
-```{r genes_of_interest}
+### Adenosine genes overview
+```{r adenosine_genes}
 
 # create output dir
-output.dir <- paste0("results/genes_of_interest_overview/")
+output.dir <- paste0("results/Adenosine_genes_overview/")
 
 if(!dir.exists(output.dir)){
   dir.create(output.dir, 
@@ -579,7 +579,6 @@ if(!dir.exists(output.dir)){
 
 
 
-VlnPlot_scCustom(haniffa.seurat, "ADORA3", pt.size = 0, group.by = "Status")
 
 
   ############
@@ -587,73 +586,79 @@ VlnPlot_scCustom(haniffa.seurat, "ADORA3", pt.size = 0, group.by = "Status")
   ############
   DefaultAssay(haniffa.seurat) <- "SCT"
   
-  # create pseudobulk for visualisation
-  pseudo.seurat <- AggregateExpression(haniffa.seurat, 
-                                   assays = "SCT",
-                                   return.seurat = TRUE,
-                                   group.by = c("seurat_clusters", "donor_id"))
+  Idents(haniffa.seurat) <- "seurat_clusters"
+table(Idents(haniffa.seurat))
+
+
+
+# create pseudobulk for visualisation
+pseudo.seurat <- AggregateExpression(haniffa.seurat, 
+                                     assays = "SCT",
+                                     return.seurat = TRUE,
+                                     group.by = c("seurat_clusters"))
   
-  # set idents of pseudobulk object
-  Idents(pseudo.seurat) <- "orig_idents"
-  
-
-
-
+# set idents of pseudobulk object
+Idents(pseudo.seurat) <- "seurat_clusters"
 
 DoHeatmap(pseudo.seurat, 
-            features = goi, 
-            draw.lines = FALSE, 
-            raster = FALSE) + NoLegend()
+          features = adenosine.genes, 
+          draw.lines = FALSE,
+          raster = FALSE) + NoLegend()
   
-#dev.copy(pdf, paste0(output.dir, "Heatmaptop_10_DEGs_seurat_clusters_pseudobulk.pdf"))
- # dev.off()
-
-
-
+dev.copy(pdf, paste0(output.dir, "Heatmap_seurat_clusters_pseudobulk_adenosine_genes.pdf"))
+dev.off()
 
 
 
 ggplot2_switch_version(desired_version = "3.4.4")
 
 
-# set up object
-DefaultAssay(HL.seurat) <- "ADT"
-
-goi <- rownames(HL.seurat@assays$ADT)
-
-
 # Plot Feature and Density plots iteratively over goi 
-for(i in seq_along(goi)){
+for(i in seq_along(adenosine.genes)){
   
   # feature plots
   print(
-    scCustomize::FeaturePlot_scCustom(HL.seurat, 
-                                      reduction = "wnn.umap", 
-                                      features = goi[i])
+    scCustomize::FeaturePlot_scCustom(haniffa.seurat, 
+                                      reduction = "umap.cca.sct", 
+                                      features = adenosine.genes[i])
     
   )
   
-  dev.copy(pdf, paste0(output.dir, "UMAP_featureplot_", goi[i], ".pdf"))
+  dev.copy(pdf, paste0(output.dir, "UMAP_featureplot_", adenosine.genes[i], ".pdf"))
   dev.off()
-  
   
   # density plots
   
   print(
-    scCustomize::Plot_Density_Custom(HL.seurat, 
-                                     reduction = "wnn.umap",
-                                     features = goi[i], 
+    scCustomize::Plot_Density_Custom(haniffa.seurat, 
+                                     reduction = "umap.cca.sct",
+                                     features = adenosine.genes[i], 
                                      custom_palette = batlow.pal)
   )
-  dev.copy(pdf, paste0(output.dir, "UMAP_DensityPlot_", goi[i], ".pdf"))
+  dev.copy(pdf, paste0(output.dir, "UMAP_DensityPlot_", adenosine.genes[i], ".pdf"))
   dev.off()
   
+  # Vln plots
   
+  print(
+    scCustomize::VlnPlot_scCustom(haniffa.seurat, 
+                                  features = adenosine.genes[i], 
+                                  pt.size = 0, 
+                                  group.by = "seurat_clusters") + 
+      NoLegend()
+  )
+  
+  dev.copy(pdf, paste0(output.dir, "VlnPlot_", adenosine.genes[i], ".pdf"))
+  dev.off()
   
 }
 
 
 ggplot2_switch_version(desired_version = "3.5.0")
+
+
+#x <- SeuratExtend::feature_percent(haniffa.seurat, "NT5E", DefaultAssay = "SCT")
+#sum(x)
 
 
 ```

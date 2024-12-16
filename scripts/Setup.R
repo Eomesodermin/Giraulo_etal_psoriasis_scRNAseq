@@ -23,7 +23,10 @@ source("scripts/Load_Packages.R")
 # Parallelization of seurat functions
 ########################################
 
-parallelization <- TRUE
+parallelization <- FALSE
+# keep in mind that for some reason some processes are crazy slow and use heaps of ram when using multisession 
+# sometimes sequential is much faster and uses very little ram
+# keep sequential as default and only change if necessary
 
 
 if(parallelization){

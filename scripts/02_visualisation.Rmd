@@ -1,0 +1,773 @@
+---
+title: "visualisation"
+author: "Dillon Corvino"
+date: "05/12/2024"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: united
+    highlight: tango
+    df_print: paged
+    code_folding: hide
+editor_options: 
+  chunk_output_type: console
+---
+
+Built with R version `r getRversion()`
+
+## Setup {.tabset}
+
+### Dataset information
+```{r Dataset_Info}
+
+# Human 
+# data downloaded from https://zenodo.org/records/7562864
+
+```
+
+### Environment
+```{r setup}
+
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,  
+  eval = TRUE, 
+  tidy = TRUE
+)
+
+knitr::opts_knit$set(
+  root.dir = "../"
+)
+
+# Environment Set up
+rm(list = ls()) #Clean workspace
+cat("\014")     #Clean Console
+gc() # Free memory
+
+# pipeline variables
+long.compute <- FALSE
+do.plot <- TRUE
+quick.load <- TRUE
+
+# Establish working directory
+library("rstudioapi")
+
+# Set working directory to source file location
+setwd(dirname(getActiveDocumentContext()$path))
+setwd("..")
+
+# Create output directories & load custom functions & colour scheme
+source("scripts/Setup.R", local = knitr::knit_global())
+
+# load packages
+library("Seurat")
+library("SeuratExtend")
+
+# Load the future package
+library(future)
+
+# Set the maximum size of globals that can be exported to 50 GB
+options(future.globals.maxSize = 100 * 1024^3)  # 50 GB in bytes
+getOption("future.globals.maxSize")
+
+
+# Ensure ggplot2 is the correct version - requires restarting Rsession and loading packages again
+ggplot2_switch_version(desired_version = "3.5.0")
+
+
+# genes of interest 
+adenosine.genes <- c("NT5E", "ENTPD1", "ADORA1", "ADORA2A", "ADORA2B", "ADORA3")
+
+# load processed data
+if(quick.load){
+  
+    haniffa.seurat <- LoadSeuratRds("saves/haniffa_seurat.rds")
+
+    
+    # create new broad cell annotation 
+    # group together finer detail celltypes
+    
+    library(dplyr)
+
+haniffa.seurat@meta.data <- haniffa.seurat@meta.data %>%
+  mutate(Broad_celltypes = case_when(
+    final_clustering %in% c("Proliferating_KC", "Differentiated_KC", "Undifferentiated_KC*", "Differentiated_KC*") ~ "Keratinocytes",
+    final_clustering %in% c("LE1", "LE2") ~ "Langerhans_Epidermal",
+    final_clustering %in% c("F1", "F2", "F3") ~ "Fibroblasts",
+    final_clustering %in% c("VE1", "VE2", "VE3") ~ "Vascular_Endothelial",
+    final_clustering %in% c("LC_1", "LC_2", "LC_3", "LC_4") ~ "Langerhans_Cells",
+        final_clustering %in% c("Th") ~ "CD4T_Cells",
+    final_clustering %in% c("Treg") ~ "Treg",
+    final_clustering %in% c("Tc") ~ "CD8T_Cells",
+
+    #final_clustering %in% c("Th", "Tc", "Treg") ~ "T_Cells",
+        final_clustering %in% c("NK") ~ "NK_cells",
+    final_clustering %in% c("ILC1_NK", "ILC1_3", "ILC2") ~ "NK_ILCs",
+
+#    final_clustering %in% c("NK", "ILC1_NK", "ILC1_3", "ILC2") ~ "Innate_Lymphoid_Cells",
+    final_clustering %in% c("Macro_1", "Macro_2", "Mono", "Inf_mono") ~ "Monocytes_Macrophages",
+    final_clustering %in% c("DC1", "DC2", "MigDC") ~ "Dendritic_Cells",
+    final_clustering %in% c("moDC_1", "moDC_2", "moDC_3") ~ "Monocyte_Derived_DC",
+    final_clustering == "Plasma" ~ "Plasma_Cells",
+    final_clustering %in% c("Pericyte_1_non_inflamm", "Pericyte_2_inflamm") ~ "Pericytes",
+    final_clustering %in% c("Schwann1", "Schwann2") ~ "Schwann_Cells",
+    final_clustering == "Mast_cell" ~ "Mast_Cells",
+    final_clustering == "Melanocyte" ~ "Melanocytes",
+    TRUE ~ "Other"
+  ))
+
+    
+    
+}
+
+```
+
+
+## General Overview {.tabset}
+
+### Overview
+```{r Overview}
+
+# create output dir
+output.dir <- paste0("results/Dataset_overview/")
+
+if(!dir.exists(output.dir)){
+  dir.create(output.dir, 
+             recursive = T)
+  
+}
+
+    vars.plot <- c("seurat_clusters", "final_clustering", "Sex", "Tissue", "Status", "Enrichment", "donor_id", "Site")
+
+    
+    for(i in seq_along(vars.plot)){
+      
+      p1 <- scCustomize::DimPlot_scCustom(haniffa.seurat,
+                                          group.by = vars.plot[i], 
+                                          label = TRUE,
+                                          pt.size = 1,
+                                          reduction = "umap.cca.sct") + 
+        NoLegend() + 
+        ggtitle(paste0(vars.plot[i]))
+      
+      print(p1)
+      ggsave(filename = paste0(output.dir, "UMAP_", vars.plot[i], ".pdf"))
+      
+    }
+    
+    
+    # Cluster distribution bar plot
+    
+    vars.plot <- c("seurat_clusters", "final_clustering", "Sex", "Tissue", "donor_id", "Site")
+    
+    for(i in seq_along(vars.plot)){
+      
+      p1 <- ClusterDistrBar(haniffa.seurat$Status, haniffa.seurat@meta.data[,vars.plot[i]], 
+                            rev = T, 
+                            percent = T, 
+                            normalize = T, 
+                            plot = T)
+      
+      print(p1)
+      ggsave(filename = paste0(output.dir, "Clust_Distribution_", vars.plot[i], "_normalised.pdf"))
+      
+      
+      p2 <- ClusterDistrBar(haniffa.seurat$Status, haniffa.seurat@meta.data[,vars.plot[i]], 
+                            rev = T, 
+                            percent = F, 
+                            normalize = T, 
+                            plot = T)
+      
+      print(p2)
+      ggsave(filename = paste0(output.dir, "Clust_Distribution_", vars.plot[i], "_normalised_abs.pdf"))
+      
+      
+      
+    }
+    
+    
+    
+```
+
+
+###  Where is Adenosine pathway expressed
+```{r Adenosine_overview}
+
+# create output dir
+output.dir <- paste0("results/adenosine_overview/")
+
+if(!dir.exists(output.dir)){
+  dir.create(output.dir, 
+             recursive = T)
+  
+}
+
+library(ggplot2)
+library(scCustomize)
+library(gplots)
+library(Seurat)
+
+
+p <- scCustomize::DimPlot_scCustom(haniffa.seurat,
+                                   group.by = "final_clustering", 
+                                   label = TRUE,
+                                   pt.size = 1,
+                                   figure_plot = T,
+                                   reduction = "umap.cca.sct") 
+print(p)
+ggsave(filename = paste0(output.dir, "UMAP_final_clustering.pdf"),
+       plot = p, 
+       width = 8,
+       height = 6, 
+       device = "pdf")
+
+p <- scCustomize::DimPlot_scCustom(haniffa.seurat,
+                                   group.by = "Broad_celltypes", 
+                                   label = TRUE,
+                                   figure_plot = T,
+                                   pt.size = 1,
+                                   reduction = "umap.cca.sct") 
+print(p)
+ggsave(filename = paste0(output.dir, "UMAP_Broad_celltypes.pdf"),
+       plot = p, 
+       width = 8,
+       height = 6, 
+       device = "pdf")
+
+
+  
+      ############
+  # GEX data
+  ############
+  DefaultAssay(haniffa.seurat) <- "SCT"
+  
+  
+Idents(haniffa.seurat) <- "Broad_celltypes"
+
+
+
+# create pseudobulk for visualisation
+pseudo.seurat <- AggregateExpression(haniffa.seurat, 
+                                     assays = "SCT",
+                                     return.seurat = TRUE,
+                                     group.by = c("Broad_celltypes"))
+  
+# set idents of pseudobulk object
+Idents(pseudo.seurat) <- "Broad_celltypes"
+
+DoHeatmap(pseudo.seurat, 
+          features = adenosine.genes, 
+          draw.lines = FALSE,
+          raster = FALSE) + NoLegend()
+  
+dev.copy(pdf, paste0(output.dir, "Heatmap_seurat_clusters_pseudobulk_adenosine_genes.pdf"))
+dev.off()
+
+
+
+ggplot2_switch_version(desired_version = "3.4.4")
+
+Idents(haniffa.seurat) <- "Broad_celltypes"
+
+# Plot Feature and Density plots iteratively over goi 
+for(gene in adenosine.genes){
+  
+  # feature plots
+  p <- scCustomize::FeaturePlot_scCustom(haniffa.seurat, 
+                                         reduction = "umap.cca.sct", 
+                                         features = gene)
+  
+  print(p)
+  ggsave(filename = paste0(output.dir, "UMAP_featureplot_", gene, ".pdf"),
+                           plot = p, 
+                           width = 8,
+                           height = 6, 
+                           device = "pdf")
+  
+  
+  # density plots
+  
+  p <- scCustomize::Plot_Density_Custom(haniffa.seurat, 
+                                        reduction = "umap.cca.sct",
+                                        features = gene, 
+                                        custom_palette = batlow.pal)
+  
+  print(p)
+  ggsave(filename = paste0(output.dir, "UMAP_DensityPlot_", gene, ".pdf"),
+                           plot = p, 
+                           width = 8,
+                           height = 6, 
+                           device = "pdf")
+  # Vln plots
+  
+  p <- scCustomize::VlnPlot_scCustom(haniffa.seurat, 
+                                     features = gene, 
+                                     pt.size = 0, 
+                                     group.by = "Broad_celltypes") + 
+    NoLegend()
+  
+  print(p)
+  
+  ggsave(filename = paste0(output.dir, "VlnPlot_", gene, ".pdf"),
+                           plot = p, 
+                           width = 8,
+                           height = 6, 
+                           device = "pdf")
+  
+  
+}
+
+
+ggplot2_switch_version(desired_version = "3.5.0")
+
+
+
+library(ggplot2)
+library(dplyr)
+library(SeuratExtend)
+
+# Define a fixed color scheme for cell types
+celltype_colors <- c(
+  "CD4T_Cells" = "#E41A1C",  # Red
+  "CD8T_Cells" = "#377EB8",  # Blue
+  "Dendritic_Cells" = "#4DAF4A",  # Green
+  "Fibroblasts" = "#984EA3",  # Purple
+  "Keratinocytes" = "#FF7F00",  # Orange
+  "Langerhans_Cells" = "#FFFF33",  # Yellow
+  "Langerhans_Epidermal" = "#A65628",  # Brown
+  "Mast_Cells" = "#F781BF",  # Pink
+  "Melanocytes" = "#999999",  # Grey
+  "Monocyte_Derived_DC" = "#66C2A5",  # Teal
+  "Monocytes_Macrophages" = "#FC8D62",  # Salmon
+  "NK_cells" = "#8DA0CB",  # Light Blue
+  "NK_ILCs" = "#E78AC3",  # Light Pink
+  "Other" = "#A6D854",  # Light Green
+  "Pericytes" = "#FFD92F",  # Gold
+  "Plasma_Cells" = "#E5C494",  # Beige
+  "Schwann_Cells" = "#B3B3B3",  # Light Grey
+  "Treg" = "#1B9E77",  # Dark Teal
+  "Vascular_Endothelial" = "#D95F02"  # Dark Orange
+)
+
+# Loop over each gene in adenosine.genes
+for(gene in adenosine.genes){
+  
+  # Compute percentage expression per cluster
+  expr_data <- SeuratExtend::feature_percent(haniffa.seurat, gene, group.by = "Broad_celltypes", above = 0, DefaultAssay = "SCT")
+  
+  # Convert to a data frame
+  expr_df <- as.data.frame(t(expr_data))
+  colnames(expr_df) <- "Percent_Expressing"
+  expr_df$Cell_Type <- rownames(expr_df)
+  
+  # Sort by decreasing expression
+  expr_df <- expr_df %>% arrange(desc(Percent_Expressing))
+  
+  # Ensure colors are assigned correctly
+  expr_df$Color <- celltype_colors[expr_df$Cell_Type]
+  
+  # convert to freq out of 100%
+  expr_df$Percent_Expressing <- expr_df$Percent_Expressing*100
+  
+  # Create bar plot with consistent colors
+  p <- ggplot(expr_df, aes(x = reorder(Cell_Type, Percent_Expressing), y = Percent_Expressing, fill = Cell_Type)) +
+    geom_bar(stat = "identity") +
+    scale_fill_manual(values = celltype_colors) +  # Use consistent colors
+    coord_flip() +
+    labs(title = paste(gene, "Expression Across Cell Types"),
+         x = "Cell Type",
+         y = "Percentage of Cluster Expressing Gene") +
+    theme_minimal(base_size = 14) +
+    theme(legend.position = "none")  # Hide legend to keep plots clean
+
+  # Save plot to file
+  ggsave(filename = paste0(output.dir, "Expression_", gene, ".pdf"), plot = p, width = 8, height = 6)
+}
+
+# loop over each gene but split and calculate freq expressing per disease status 
+# Loop over each gene in adenosine.genes
+
+library(ggplot2)
+library(dplyr)
+library(SeuratExtend)
+library(patchwork)  # For side-by-side plots
+
+# Create Status-CellType combined annotation
+haniffa.seurat@meta.data$Status_celltype <- paste0(haniffa.seurat@meta.data$Status, "_", haniffa.seurat@meta.data$Broad_celltypes)
+
+# Loop over each gene in adenosine.genes
+for(gene in adenosine.genes){
+  
+  # Compute percentage expression per cluster
+  expr_data <- SeuratExtend::feature_percent(haniffa.seurat, gene, group.by = "Status_celltype", above = 0, DefaultAssay = "SCT")
+  
+  # Convert to a data frame
+  expr_df <- as.data.frame(t(expr_data))
+  colnames(expr_df) <- "Percent_Expressing"
+  expr_df$Status_celltype <- rownames(expr_df)
+  
+  # Extract Status and Cell Type
+  expr_df <- expr_df %>%
+    mutate(Status = ifelse(grepl("^Healthy_", Status_celltype), "Healthy", "Psoriasis"),
+           Cell_Type = gsub("Healthy_|Psoriasis_", "", Status_celltype),
+           Percent_Expressing = Percent_Expressing * 100)  # Convert to percentage
+  
+  # Sort by decreasing expression
+  expr_df <- expr_df %>% arrange(desc(Percent_Expressing))
+  
+  # Separate data into Healthy & Psoriasis
+  expr_healthy <- expr_df %>% filter(Status == "Healthy")
+  expr_psoriasis <- expr_df %>% filter(Status == "Psoriasis")
+  
+  # Ensure consistent color mapping
+  expr_healthy$Color <- celltype_colors[expr_healthy$Cell_Type]
+  expr_psoriasis$Color <- celltype_colors[expr_psoriasis$Cell_Type]
+  
+  # Get max y-axis limit for consistency
+  y_max <- max(expr_df$Percent_Expressing, na.rm = TRUE)
+
+  # Create bar plots for Healthy
+  p1 <- ggplot(expr_healthy, aes(x = reorder(Cell_Type, Percent_Expressing), y = Percent_Expressing, fill = Cell_Type)) +
+    geom_bar(stat = "identity") +
+    scale_fill_manual(values = celltype_colors) +
+    coord_flip() +
+    labs(title = paste(gene, "- Healthy"), x = "Cell Type", y = "Percentage Expressing") +
+    theme_minimal(base_size = 14) +
+    theme(legend.position = "none") +
+    ylim(0, y_max)
+
+  # Create bar plots for Psoriasis
+  p2 <- ggplot(expr_psoriasis, aes(x = reorder(Cell_Type, Percent_Expressing), y = Percent_Expressing, fill = Cell_Type)) +
+    geom_bar(stat = "identity") +
+    scale_fill_manual(values = celltype_colors) +
+    coord_flip() +
+    labs(title = paste(gene, "- Psoriasis"), x = "", y = "") +  # Remove redundant labels
+    theme_minimal(base_size = 14) +
+    theme(legend.position = "none",
+          axis.ticks.y = element_blank()) +
+    ylim(0, y_max)
+
+  # Combine plots side-by-side
+  combined_plot <- p1 + p2 + plot_annotation(title = paste(gene, "Expression in Healthy vs Psoriasis"))
+
+  # Save plot to file
+  ggsave(filename = paste0(output.dir, "Expression_disease_seperated_", gene, ".pdf"), plot = combined_plot, width = 12, height = 6)
+}
+
+
+```
+
+## TO DO
+# make vln plots boxwiskers plots and add statistics, is sig diff or not - perform t test 
+
+### healthy vs disease comparison
+```{r healthy_vs_disease}
+
+# create output dir
+output.dir <- paste0("results/adenosine_overview_healthy_vs_disease/")
+
+if(!dir.exists(output.dir)){
+  dir.create(output.dir, 
+             recursive = T)
+  
+}
+
+Idents(haniffa.seurat) <- "Broad_celltypes"
+celltypes <- unique(Idents(haniffa.seurat))
+
+for(celltype in celltypes){
+  
+  temp.seurat <- subset(haniffa.seurat, idents = celltype)
+  
+  p <- SeuratExtend::WaterfallPlot_v3(temp.seurat,
+                                      features = adenosine.genes, 
+                                      ident.1 = "Healthy", ident.2 = "Psoriasis", group.by = "Status",
+                                      length = "logFC", 
+                                      style = "bar") + ggtitle(paste0("Healthy vs Psoriasis - ", celltype))
+  print(p)
+  
+  ggsave(filename = paste0(output.dir, "Waterfall_adenosine_path_", celltype, ".pdf"),
+         plot = p, 
+         width = 8,
+         height = 6, 
+         device = "pdf")
+  
+  # create violn plots of genes individually 
+  for(gene in adenosine.genes){
+    
+    p <- VlnPlot_scCustom(temp.seurat, 
+                          features = gene, 
+                          group.by = "Status", 
+                          pt.size = 0) + NoLegend() + 
+      ggtitle(ggtitle(paste0(celltype, "-", gene)))
+    print(p)
+    
+    ggsave(filename = paste0(output.dir, "Vlnplot_", gene, "_", celltype, ".pdf"),
+           plot = p, 
+           width = 8,
+           height = 6, 
+           device = "pdf")
+    
+  }
+  
+}
+
+
+
+
+```
+
+
+# TO DO 
+# group adenosine pathway by production and receptor (producer or responder) 
+# maybe make a unified adenosine pathway score 
+# zoom into most interesting populations (either producers or responders)
+# then query the difference in expression between healthy and disease and maybe abudnace of the population across healthy and disease 
+
+
+
+
+
+### Adenosine genes overview
+```{r adenosine_genes}
+
+# create output dir
+output.dir <- paste0("results/Adenosine_genes_overview/")
+
+if(!dir.exists(output.dir)){
+  dir.create(output.dir, 
+             recursive = T)
+  
+}
+
+
+
+
+
+  ############
+  # GEX data
+  ############
+  DefaultAssay(haniffa.seurat) <- "SCT"
+  
+  Idents(haniffa.seurat) <- "seurat_clusters"
+table(Idents(haniffa.seurat))
+
+
+
+# create pseudobulk for visualisation
+pseudo.seurat <- AggregateExpression(haniffa.seurat, 
+                                     assays = "SCT",
+                                     return.seurat = TRUE,
+                                     group.by = c("seurat_clusters"))
+  
+# set idents of pseudobulk object
+Idents(pseudo.seurat) <- "seurat_clusters"
+
+DoHeatmap(pseudo.seurat, 
+          features = adenosine.genes, 
+          draw.lines = FALSE,
+          raster = FALSE) + NoLegend()
+  
+dev.copy(pdf, paste0(output.dir, "Heatmap_seurat_clusters_pseudobulk_adenosine_genes.pdf"))
+dev.off()
+
+
+
+ggplot2_switch_version(desired_version = "3.4.4")
+
+
+# Plot Feature and Density plots iteratively over goi 
+for(i in seq_along(adenosine.genes)){
+  
+  # feature plots
+  print(
+    scCustomize::FeaturePlot_scCustom(haniffa.seurat, 
+                                      reduction = "umap.cca.sct", 
+                                      features = adenosine.genes[i])
+    
+  )
+  
+  dev.copy(pdf, paste0(output.dir, "UMAP_featureplot_", adenosine.genes[i], ".pdf"))
+  dev.off()
+  
+  # density plots
+  
+  print(
+    scCustomize::Plot_Density_Custom(haniffa.seurat, 
+                                     reduction = "umap.cca.sct",
+                                     features = adenosine.genes[i], 
+                                     custom_palette = batlow.pal)
+  )
+  dev.copy(pdf, paste0(output.dir, "UMAP_DensityPlot_", adenosine.genes[i], ".pdf"))
+  dev.off()
+  
+  # Vln plots
+  
+  print(
+    scCustomize::VlnPlot_scCustom(haniffa.seurat, 
+                                  features = adenosine.genes[i], 
+                                  pt.size = 0, 
+                                  group.by = "seurat_clusters") + 
+      NoLegend()
+  )
+  
+  dev.copy(pdf, paste0(output.dir, "VlnPlot_", adenosine.genes[i], ".pdf"))
+  dev.off()
+  
+}
+
+
+ggplot2_switch_version(desired_version = "3.5.0")
+
+
+#x <- SeuratExtend::feature_percent(haniffa.seurat, "NT5E", DefaultAssay = "SCT")
+#sum(x)
+
+
+```
+
+
+
+
+
+## Annotate clusters {.tabset}
+
+### Differential gene expression GEX vs seurat_clusters
+```{r DEG_analysis_seurat_clusters}
+
+# create output dir
+output.dir <- paste0("results/DEG_analysis_seurat_clusters/")
+
+if(!dir.exists(output.dir)){
+  dir.create(output.dir, 
+             recursive = T)
+  
+}
+
+################################################
+# Caclulate GEX DEGs for across seurat_clusters 
+################################################
+
+if(long.compute){
+  
+  # set assay
+  DefaultAssay(seurat.human) <- "SCT"
+  seurat.human <- PrepSCTFindMarkers(seurat.human)
+  
+  # DEG calculation using single-cells
+  
+  # set assay
+  DefaultAssay(seurat.human) <- "SCT"
+  
+  # format cluster annotations
+  seurat.human@meta.data$seurat_clusters <- factor(seurat.human@meta.data$seurat_clusters, levels = c(0:length(unique(seurat.human@meta.data$seurat_clusters))))
+  
+  # set idents
+  Idents(seurat.human) <- "seurat_clusters"
+  
+  seurat_clusters.gex.de <- FindAllMarkers(seurat.human,
+                                           assay = "SCT",
+                                           only.pos = TRUE, 
+                                           verbose = TRUE)
+  
+  # save to file 
+  write.csv(seurat_clusters.gex.de, paste0(output.dir, "DEGs_wilcox_single_cell_SCT_seurat_clusters.csv"))
+  
+}else{
+  
+  seurat_clusters.gex.de <- read.csv(paste0(output.dir, "DEGs_wilcox_single_cell_SCT_seurat_clusters.csv"))
+  
+}
+
+
+
+
+```
+
+
+### DEG heatmaps - GEX and ADT - seurat_clusters
+```{r DEG_heatmaps_seurat_clusters}
+
+# create output dir
+output.dir <- paste0("results/DEG_analysis_seurat_clusters/")
+
+if(!dir.exists(output.dir)){
+  dir.create(output.dir, 
+             recursive = T)
+  
+}
+
+
+if(do.plot){
+  
+  
+  ############
+  # GEX data
+  ############
+  DefaultAssay(seurat.human) <- "SCT"
+  
+  # create pseudobulk for visualisation
+  pseudo.seurat <- AggregateExpression(seurat.human, 
+                                   assays = "SCT",
+                                   return.seurat = TRUE,
+                                   group.by = c("seurat_clusters"))
+  
+  # set idents of pseudobulk object
+  Idents(pseudo.seurat) <- "seurat_clusters"
+  
+  # extract top 10 DEGs per cluster
+  goi <- seurat_clusters.gex.de %>%
+    dplyr::filter(p_val_adj < 0.05) %>%
+    dplyr::group_by(cluster) %>%
+    dplyr::top_n(10, avg_log2FC) %>%
+    dplyr::pull(gene)
+  
+  # heatmap of top 10 degs per cluster
+  DoHeatmap(pseudo.seurat, 
+            features = goi, 
+            draw.lines = FALSE, 
+            raster = FALSE) + NoLegend()
+  
+  dev.copy(pdf, paste0(output.dir, "Heatmaptop_10_DEGs_seurat_clusters_pseudobulk.pdf"))
+  dev.off()
+  
+  
+  # iterate over the top degs for each cluster 
+  cluster.id <- unique(seurat_clusters.gex.de$cluster)
+  for(i in seq_along(cluster.id)){
+    
+    
+    print(cluster.id[i])
+    
+    goi <- seurat_clusters.gex.de %>%
+      dplyr::filter(p_val_adj < 0.05) %>%
+      dplyr::filter(cluster == cluster.id[i]) %>%
+      dplyr::top_n(50, avg_log2FC)
+    
+    goi <- unique(goi)
+    
+    print(
+      DoHeatmap(pseudo.seurat, 
+                features = goi$gene, 
+                draw.lines = FALSE, 
+                raster = FALSE)
+    )
+    
+    dev.copy(pdf, paste0(output.dir, "Heatmaptop_50_DEGs_pseudobulk__seurat_cluster_", cluster.id[i], ".pdf"))
+    dev.off()
+    
+  }
+  
+}
+
+```
+
+
+
+
+
+
+

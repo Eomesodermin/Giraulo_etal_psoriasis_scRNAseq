@@ -1,5 +1,7 @@
 # Psoriasis — single-cell RNA-seq
 
+> **Status:** unpublished work — if you use this analysis, please cite this repository (see [`CITATION.cff`](CITATION.cff)).
+
 Single-cell RNA-seq analysis of **psoriasis** performed in collaboration with the Morello Lab
 (C. Giraulo), characterising the immune and stromal landscape of psoriatic skin.
 
